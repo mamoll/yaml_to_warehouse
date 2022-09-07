@@ -45,6 +45,9 @@
 #include <moveit/warehouse/constraints_storage.h>
 #include <moveit/warehouse/state_storage.h>
 
+#include <warehouse_ros/database_connection.h>
+#include <rclcpp/rclcpp.hpp>
+
 #include <yaml_msg_convert.h>
 
 static const std::string ROBOT_DESCRIPTION = "robot_description";
@@ -67,12 +70,12 @@ int main(int argc, char** argv)
                     "Name of directory containing motion planning benchmarks.")
       ("num", boost::program_options::value<unsigned int>()->default_value(10u),
               "Number of motion planning benchmarks to process.")
-      ("host", boost::program_options::value<std::string>()->default_value("test.sqlite"), "Host for the DB.")
+      ("host", boost::program_options::value<std::string>()->default_value("/tmp/test_db.sqlite"), "Host for the DB.")
       ("port", boost::program_options::value<std::size_t>(), "Port for the DB.");
   // clang-format on
 
   boost::program_options::variables_map vm;
-  boost::program_options::store(boost::program_options::parse_command_line(argc-4, argv+4, desc), vm);
+  boost::program_options::store(boost::program_options::parse_command_line(argc - 4, argv + 4, desc), vm);
   boost::program_options::notify(vm);
 
   if (vm.count("help") || argc == 1)  // show help if no parameters passed
@@ -82,18 +85,21 @@ int main(int argc, char** argv)
   }
   // Set up db
   node->set_parameter(rclcpp::Parameter("warehouse_plugin", "warehouse_ros_sqlite::DatabaseConnection"));
+  if (vm.count("host"))
+  {
+    node->set_parameter(rclcpp::Parameter("warehouse_host", vm["host"].as<std::string>()));
+  }
+
   warehouse_ros::DatabaseConnection::Ptr conn = moveit_warehouse::loadDatabase(node);
-  if (vm.count("host") && vm.count("port"))
-    conn->setParams(vm["host"].as<std::string>(), vm["port"].as<std::size_t>());
   if (!conn->connect())
     return 1;
 
-//   planning_scene_monitor::PlanningSceneMonitor psm(node, ROBOT_DESCRIPTION);
-//   if (!psm.getPlanningScene())
-//   {
-//     RCLCPP_ERROR(LOGGER, "Unable to initialize PlanningSceneMonitor");
-//     return 1;
-//   }
+  //   planning_scene_monitor::PlanningSceneMonitor psm(node, ROBOT_DESCRIPTION);
+  //   if (!psm.getPlanningScene())
+  //   {
+  //     RCLCPP_ERROR(LOGGER, "Unable to initialize PlanningSceneMonitor");
+  //     return 1;
+  //   }
 
   moveit_warehouse::PlanningSceneStorage pss(conn);
   moveit_msgs::msg::PlanningScene scene_msg;
@@ -102,7 +108,7 @@ int main(int argc, char** argv)
   unsigned num = vm["num"].as<unsigned int>();
   std::string path = vm["directory"].as<std::string>();
 
-  for (unsigned i=1; i<=num; ++i)
+  for (unsigned i = 1; i <= num; ++i)
   {
     std::string scene = fmt::format("{}/scene{:04}.yaml", path, i);
     std::string scene_sensed = fmt::format("{}/scene_sensed{:04}.yaml", path, i);
@@ -111,21 +117,28 @@ int main(int argc, char** argv)
 
     if (yaml_msg::fromYAMLFile(scene_msg, scene))
     {
-        scene_msg.name = scene;
-        pss.addPlanningScene(scene_msg);
+      scene_msg.name = fmt::format("scene{}", i);
     }
     if (yaml_msg::fromYAMLFile(scene_msg, scene_sensed))
     {
-        scene_msg.name = scene_sensed;
-        pss.addPlanningScene(scene_msg);
+      scene_msg.name = fmt::format("scene_sensed{}", i);
     }
+    pss.addPlanningScene(scene_msg);
     if (yaml_msg::fromYAMLFile(request_msg, request) && yaml_msg::fromYAMLFile(trajectory_msg, trajectory))
     {
-        pss.addPlanningResult(request_msg, trajectory_msg, scene);
+      pss.addPlanningQuery(request_msg, scene_msg.name, scene_msg.name + "_query");
+      pss.addPlanningResult(request_msg, trajectory_msg, scene);
     }
-    std::cout << scene_msg.name << '\t' << scene_sensed << '\t'<< request <<'\t'<<trajectory << std::endl; 
+    std::cout << scene_msg.name << '\n' << scene_sensed << '\n' << request << '\n' << trajectory << std::endl;
+    std::cout << "================================================================================================="
+              << std::endl;
   }
 
-  rclcpp::spin(node);
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(node);
+  std::thread([&executor]() { executor.spin(); }).detach();
+
+  RCLCPP_INFO(LOGGER, "Shutting down.");
+  rclcpp::shutdown();
   return 0;
 }
