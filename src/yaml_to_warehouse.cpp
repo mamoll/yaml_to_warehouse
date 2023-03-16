@@ -75,7 +75,7 @@ int main(int argc, char** argv)
   // clang-format on
 
   boost::program_options::variables_map vm;
-  boost::program_options::store(boost::program_options::parse_command_line(argc - 4, argv + 4, desc), vm);
+  boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), vm);
   boost::program_options::notify(vm);
 
   if (vm.count("help") || argc == 1)  // show help if no parameters passed
@@ -94,13 +94,6 @@ int main(int argc, char** argv)
   if (!conn->connect())
     return 1;
 
-  //   planning_scene_monitor::PlanningSceneMonitor psm(node, ROBOT_DESCRIPTION);
-  //   if (!psm.getPlanningScene())
-  //   {
-  //     RCLCPP_ERROR(LOGGER, "Unable to initialize PlanningSceneMonitor");
-  //     return 1;
-  //   }
-
   moveit_warehouse::PlanningSceneStorage pss(conn);
   moveit_msgs::msg::PlanningScene scene_msg;
   moveit_msgs::msg::MotionPlanRequest request_msg;
@@ -113,25 +106,42 @@ int main(int argc, char** argv)
     std::string scene = fmt::format("{}/scene{:04}.yaml", path, i);
     std::string scene_sensed = fmt::format("{}/scene_sensed{:04}.yaml", path, i);
     std::string request = fmt::format("{}/request{:04}.yaml", path, i);
-    std::string trajectory = fmt::format("{}/trajectory{:04}.yaml", path, i);
+    std::string trajectory = fmt::format("{}/path{:04}.yaml", path, i);
 
     if (yaml_msg::fromYAMLFile(scene_msg, scene))
     {
-      scene_msg.name = fmt::format("scene{}", i);
+      // add planning scene with primitive shapes
+      scene_msg.name = scene;
+      pss.addPlanningScene(scene_msg);
+    }
+    else
+    {
+      // skip the rest and move on to the next scene
+      continue;
     }
     if (yaml_msg::fromYAMLFile(scene_msg, scene_sensed))
     {
-      scene_msg.name = fmt::format("scene_sensed{}", i);
+      // add planning scene with octree representation of scene
+      scene_msg.name = scene_sensed;
+      pss.addPlanningScene(scene_msg);
     }
-    pss.addPlanningScene(scene_msg);
+    else
+    {
+      // skip the rest and move on to the next scene
+      continue;
+    }
     if (yaml_msg::fromYAMLFile(request_msg, request) && yaml_msg::fromYAMLFile(trajectory_msg, trajectory))
     {
+      // add a planning query and a feasible solution for that query
       pss.addPlanningQuery(request_msg, scene_msg.name, scene_msg.name + "_query");
       pss.addPlanningResult(request_msg, trajectory_msg, scene);
     }
-    std::cout << scene_msg.name << '\n' << scene_sensed << '\n' << request << '\n' << trajectory << std::endl;
-    std::cout << "================================================================================================="
-              << std::endl;
+    else
+    {
+      // skip the rest and move on to the next scene
+      continue;
+    }
+    std::cout << "Processed scene " << i << std::endl;
   }
 
   rclcpp::executors::SingleThreadedExecutor executor;

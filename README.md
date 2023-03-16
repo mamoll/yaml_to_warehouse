@@ -15,8 +15,3 @@ Compile the code like so:
 Run the resulting program like so:
 
     ros2 run yaml_to_warehouse yaml_to_warehouse --host /tmp/test.db --directory src/yaml_to_warehouse/data --num 5
-
-## Known Issues
-
-* The program runs, but doesn't terminate.
-* The program doesn't seem to respect the `--host` argument and saves the data in a file called `localhost`. This file is actually an SQLite database (run `sqlite3 localhost .schema` to check).
