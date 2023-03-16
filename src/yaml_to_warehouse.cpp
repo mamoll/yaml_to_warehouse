@@ -110,29 +110,35 @@ int main(int argc, char** argv)
 
     if (yaml_msg::fromYAMLFile(scene_msg, scene))
     {
+      // add planning scene with primitive shapes
       scene_msg.name = scene;
       pss.addPlanningScene(scene_msg);
     }
     else
     {
+      // skip the rest and move on to the next scene
       continue;
     }
     if (yaml_msg::fromYAMLFile(scene_msg, scene_sensed))
     {
+      // add planning scene with octree representation of scene
       scene_msg.name = scene_sensed;
       pss.addPlanningScene(scene_msg);
     }
     else
     {
+      // skip the rest and move on to the next scene
       continue;
     }
     if (yaml_msg::fromYAMLFile(request_msg, request) && yaml_msg::fromYAMLFile(trajectory_msg, trajectory))
     {
+      // add a planning query and a feasible solution for that query
       pss.addPlanningQuery(request_msg, scene_msg.name, scene_msg.name + "_query");
       pss.addPlanningResult(request_msg, trajectory_msg, scene);
     }
     else
     {
+      // skip the rest and move on to the next scene
       continue;
     }
     std::cout << "Processed scene " << i << std::endl;
